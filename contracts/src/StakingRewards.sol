@@ -231,8 +231,8 @@ contract StakingRewards is Ownable, ReentrancyGuard {
     function exit() external nonReentrant updateReward(msg.sender) {
         Position[] storage positions = _positions[msg.sender];
         uint256 count = positions.length;
-        uint256 totalAmount;
-        uint256 totalEffectiveOut;
+        uint256 totalAmount = 0;
+        uint256 totalEffectiveOut = 0;
 
         for (uint256 i = 0; i < count; ++i) {
             Position storage p = positions[i];
@@ -290,6 +290,9 @@ contract StakingRewards is Ownable, ReentrancyGuard {
         // Everything the new period will pay out: the new amount plus what's left of the current period.
         uint256 total = amount;
         if (block.timestamp < finishAt) {
+            // rewardRate is the exact rate still being paid, so this is exactly what the current
+            // schedule has left to pay. No precision is lost here (see AUDIT.md, Slither notes).
+            // slither-disable-next-line divide-before-multiply
             total += (finishAt - block.timestamp) * rewardRate;
         }
         if (total < duration) revert RewardRateZero(); // would round the rate down to 0
@@ -302,6 +305,7 @@ contract StakingRewards is Ownable, ReentrancyGuard {
         }
         if (total > available) revert RewardTooHigh();
 
+        // slither-disable-next-line divide-before-multiply
         rewardRate = total / duration;
 
         finishAt = block.timestamp + duration;
