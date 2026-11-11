@@ -70,7 +70,16 @@ async function newPage(browser, viewport) {
 }
 
 async function connect(page) {
-  await page.getByRole("button", { name: "Connect Wallet" }).first().click();
+  const positions = page.getByText("Your positions");
+  const connectButton = page.getByRole("button", { name: "Connect Wallet" }).first();
+  // The injected wallet may auto-connect on load; only open the modal if it didn't.
+  await Promise.race([positions.waitFor(), connectButton.waitFor()]);
+  if (await positions.isVisible()) {
+    await page.locator("table.table tbody tr").first().waitFor();
+    await page.waitForTimeout(2500);
+    return;
+  }
+  await connectButton.click();
   const dialog = page.getByRole("dialog");
   await dialog.waitFor();
   // The wallet list re-renders while it animates in, so retry the click until we're connected.

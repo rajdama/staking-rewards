@@ -19,7 +19,7 @@ export default function App() {
         <div className="brand">
           <div className="logo" aria-hidden />
           Staking Rewards
-          <span className="badge">{chain.name} testnet</span>
+          <span className="badge">{chain.id === 31337 ? "Local chain" : `${chain.name} testnet`}</span>
         </div>
         <ConnectButton chainStatus="icon" showBalance={false} />
       </header>
