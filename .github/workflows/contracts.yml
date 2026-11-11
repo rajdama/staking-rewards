@@ -27,7 +27,6 @@ jobs:
         run: forge --version
 
       - name: Format check
-        continue-on-error: true
         run: forge fmt --check
 
       - name: Build
@@ -35,6 +34,21 @@ jobs:
 
       - name: Test
         run: forge test -vv
+
+      - name: Deploy and renew on a local chain
+        env:
+          # Anvil's well-known first test key. Never use it on a real network.
+          PRIVATE_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+        run: |
+          anvil --silent &
+          sleep 2
+          forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
+          cat deployments/31337.json
+          STAKING=$(jq -r .staking deployments/31337.json)
+          cast call "$STAKING" "rewardRate()(uint256)" --rpc-url http://127.0.0.1:8545
+          cast rpc evm_increaseTime 604800 --rpc-url http://127.0.0.1:8545 && cast rpc evm_mine --rpc-url http://127.0.0.1:8545
+          forge script script/Renew.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
+          cast call "$STAKING" "finishAt()(uint256)" --rpc-url http://127.0.0.1:8545
 
       - name: Gas report
         run: forge test --gas-report --no-match-contract "Invariant|DeployScript"

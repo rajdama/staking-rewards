@@ -1,0 +1,99 @@
+name: deploy
+
+# Run manually from the Actions tab. Needs these repository secrets:
+#   DEPLOYER_PRIVATE_KEY  key of a fresh testnet-only wallet with some Sepolia ETH
+#   SEPOLIA_RPC_URL       e.g. an Alchemy Sepolia URL
+#   ETHERSCAN_API_KEY     for contract verification
+on:
+  workflow_dispatch:
+    inputs:
+      redeploy:
+        description: "Deploy again even if contracts/deployments/11155111.json exists"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency: deploy
+
+defaults:
+  run:
+    working-directory: contracts
+
+jobs:
+  deploy:
+    name: Deploy to Sepolia
+    runs-on: ubuntu-latest
+    env:
+      PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+      SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+      ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
+      DEPLOYMENT: deployments/11155111.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Check secrets
+        run: |
+          missing=""
+          [ -n "$PRIVATE_KEY" ] || missing="$missing DEPLOYER_PRIVATE_KEY"
+          [ -n "$SEPOLIA_RPC_URL" ] || missing="$missing SEPOLIA_RPC_URL"
+          [ -n "$ETHERSCAN_API_KEY" ] || missing="$missing ETHERSCAN_API_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing (Settings > Secrets and variables > Actions)"
+            exit 1
+          fi
+
+      - name: Refuse accidental redeploy
+        if: ${{ !inputs.redeploy }}
+        run: |
+          if [ -f "$DEPLOYMENT" ]; then
+            echo "::error::Already deployed ($DEPLOYMENT exists). Re-run with 'redeploy' ticked to deploy fresh contracts."
+            exit 1
+          fi
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Deploy
+        run: forge script script/Deploy.s.sol --rpc-url sepolia --broadcast
+
+      - name: Save deployment
+        working-directory: .
+        run: |
+          cat contracts/$DEPLOYMENT
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add contracts/$DEPLOYMENT
+          git commit -m "Deploy to Sepolia"
+          git pull --rebase
+          git push
+
+      - name: Verify on Etherscan
+        continue-on-error: true
+        run: |
+          STAKING=$(jq -r .staking $DEPLOYMENT)
+          STK=$(jq -r .stakeToken $DEPLOYMENT)
+          RWD=$(jq -r .rewardToken $DEPLOYMENT)
+          FAUCET=1000000000000000000000
+          forge verify-contract "$STK" src/FaucetToken.sol:FaucetToken --chain sepolia --watch \
+            --constructor-args "$(cast abi-encode 'constructor(string,string,uint256)' 'Stake Token' STK $FAUCET)"
+          forge verify-contract "$RWD" src/FaucetToken.sol:FaucetToken --chain sepolia --watch \
+            --constructor-args "$(cast abi-encode 'constructor(string,string,uint256)' 'Reward Token' RWD $FAUCET)"
+          forge verify-contract "$STAKING" src/StakingRewards.sol:StakingRewards --chain sepolia --watch \
+            --constructor-args "$(cast abi-encode 'constructor(address,address,uint256)' $STK $RWD 604800)"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Deployed to Sepolia"
+            echo ""
+            echo "| Contract | Address |"
+            echo "| --- | --- |"
+            echo "| StakingRewards | [$(jq -r .staking $DEPLOYMENT)](https://sepolia.etherscan.io/address/$(jq -r .staking $DEPLOYMENT)) |"
+            echo "| Stake token (STK) | $(jq -r .stakeToken $DEPLOYMENT) |"
+            echo "| Reward token (RWD) | $(jq -r .rewardToken $DEPLOYMENT) |"
+            echo "| Start block | $(jq -r .startBlock $DEPLOYMENT) |"
+          } >> "$GITHUB_STEP_SUMMARY"

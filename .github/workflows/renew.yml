@@ -1,0 +1,43 @@
+name: renew rewards
+
+# Tops up the reward pool once a week so the live demo never runs dry.
+# Does nothing until the contracts are deployed and the secrets are set.
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+concurrency: deploy
+
+defaults:
+  run:
+    working-directory: contracts
+
+jobs:
+  renew:
+    name: Start next reward period
+    runs-on: ubuntu-latest
+    env:
+      PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+      SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Check setup
+        id: check
+        run: |
+          if [ -f deployments/11155111.json ] && [ -n "$PRIVATE_KEY" ] && [ -n "$SEPOLIA_RPC_URL" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Not deployed yet or secrets missing; skipping."
+          fi
+
+      - name: Install Foundry
+        if: steps.check.outputs.ready == 'true'
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Renew
+        if: steps.check.outputs.ready == 'true'
+        run: forge script script/Renew.s.sol --rpc-url sepolia --broadcast
