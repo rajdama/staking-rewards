@@ -123,15 +123,14 @@ Each user stores the value of `rewardPerToken` from the last time their account 
 earned = balance × (rewardPerToken − userRewardPerTokenPaid) / 1e18 + rewards (unclaimed)
 ```
 
-```mermaid
-flowchart TD
-    A["User calls stake, withdraw or getReward"] --> B["updateReward modifier runs first"]
-    B --> C["1. Update rewardPerTokenStored<br/>add rewards for time since updatedAt"]
-    C --> D["2. Set updatedAt to now<br/>capped at finishAt"]
-    D --> E["3. Save user's earned rewards<br/>credit them up to this second"]
-    E --> F["4. Set userRewardPerTokenPaid<br/>to the current rewardPerTokenStored"]
-    F --> G["5. Run the function body<br/>change balance, transfer tokens"]
-```
+Every time a user calls `stake`, `withdraw` or `getReward`, the `updateReward` modifier
+runs these steps **before** anything else:
+
+1. **Update `rewardPerTokenStored`**: add the rewards for the time since `updatedAt`.
+2. **Set `updatedAt` to now** (capped at `finishAt`, so nothing accrues after the period ends).
+3. **Save the user's earned rewards** into `rewards[user]`, crediting them up to this second.
+4. **Set `userRewardPerTokenPaid[user]`** to the current `rewardPerTokenStored`.
+5. **Run the function itself**: change the balance, transfer tokens.
 
 Result: every operation is **O(1)**, whether there are 2 stakers or 2 million. The `1e18`
 scaling keeps precision so small values don't round down to zero.
@@ -150,38 +149,23 @@ Setup: **1,000 RWD** over **7 days** → `rewardRate ≈ 1.6534 RWD/second`.
 Alice got the whole pool while she was alone, then half of it once Bob joined. Bob only earns
 from the moment he joined, because his `userRewardPerTokenPaid` was set to 5.0 when he staked.
 
-![Cumulative rewards for Alice and Bob over 7 days](docs/images/rewards-chart.png)
-
 ## User flows
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor O as Owner
-    actor U as Staker
-    participant S as StakingRewards
-    participant STK as STK token
-    participant RWD as RWD token
+**Owner starts a reward period**
 
-    O->>RWD: approve(S, 1000)
-    O->>S: notifyRewardAmount(1000)
-    S->>RWD: transferFrom(owner to S, 1000)
-    Note over S: rewardRate = 1000 / 7 days<br/>finishAt = now + 7 days
+1. Owner approves the contract to spend 1,000 RWD.
+2. Owner calls `notifyRewardAmount(1000)`. The contract pulls in the 1,000 RWD and sets
+   `rewardRate = 1000 / 7 days` and `finishAt = now + 7 days`.
 
-    U->>STK: approve(S, 100)
-    U->>S: stake(100)
-    Note over S: updateReward(U), then balance += 100
-    S->>STK: transferFrom(U to S, 100)
+**A user stakes, earns and leaves**
 
-    Note over U,S: Time passes, rewards accrue
-
-    U->>S: getReward()
-    Note over S: updateReward(U), then rewards[U] = 0
-    S->>RWD: transfer(S to U, earned)
-
-    U->>S: withdraw(100)
-    S->>STK: transfer(S to U, 100)
-```
+1. User approves the contract to spend 100 STK.
+2. User calls `stake(100)`. Rewards are settled first (`updateReward`), then their balance
+   goes up by 100 and the tokens move into the contract.
+3. Time passes and rewards accrue automatically; no transaction is needed.
+4. User calls `getReward()`. Rewards are settled, their owed amount is reset to 0, and the
+   RWD is sent to their wallet.
+5. User calls `withdraw(100)` to get their STK back (or `exit()` to do steps 4 and 5 together).
 
 ## Contract API
 
@@ -198,42 +182,55 @@ sequenceDiagram
 
 ## Results
 
-All results below are real output from the project's
+All results below come from the project's
 [GitHub Actions run](https://github.com/rajdama/staking-rewards/actions/workflows/test.yml)
-(Foundry 1.9.0, Solc 0.8.24, optimizer on, 200 runs).
+(Foundry 1.9.0, Solc 0.8.24, optimizer on, 200 runs). They're re-run automatically on every push.
 
 ### Build
 
-The contract is 3,468 bytes, about 14% of Ethereum's 24 KB contract size limit.
-
-![forge build output](docs/images/build.png)
+| Contract | Size | Share of 24 KB limit |
+|---|---|---|
+| `StakingRewards` | 3,468 bytes | ~14% |
 
 ### Tests: 12/12 passing
 
-The fuzz test ran **1,000 random combinations** of stake amounts (1 wei up to 10¹² tokens)
-and join times, and confirmed that total rewards owed never exceed what was funded.
+| Test | What it checks | Result |
+|---|---|---|
+| `test_StakeUpdatesBalances` | Staking updates balances and moves tokens | ✅ |
+| `test_EarnsHalfRewardAtHalfTime` | A solo staker earns half the pool at the halfway point | ✅ |
+| `test_TwoStakersSplitProportionally` | 100 vs 300 staked splits rewards 25% / 75% | ✅ |
+| `test_LateStakerOnlyEarnsFromJoinTime` | The [worked example](#worked-example): 750 vs 250 | ✅ |
+| `test_NoRewardsAfterPeriodEnds` | Rewards stop growing after the period | ✅ |
+| `test_GetRewardTransfersTokens` | Claiming pays out exactly what was earned | ✅ |
+| `test_ExitReturnsStakeAndRewards` | `exit()` returns both stake and rewards | ✅ |
+| `test_RevertWhen_StakeZero` | Staking 0 is rejected | ✅ |
+| `test_RevertWhen_WithdrawMoreThanStaked` | Can't withdraw more than you staked | ✅ |
+| `test_RevertWhen_NonOwnerNotifies` | Only the owner can add rewards | ✅ |
+| `test_RevertWhen_ChangingDurationMidPeriod` | Duration can't change during a period | ✅ |
+| `testFuzz_NeverPaysMoreThanFunded` | 1,000 random runs: total owed never exceeds funded rewards | ✅ |
 
-![forge test output](docs/images/tests.png)
+The fuzz test tries random stake amounts (from 1 wei up to 10¹² tokens) and random join
+times, and checks that the contract can never owe more than it holds.
 
-### Gas report
-
-![forge gas report](docs/images/gas.png)
+### Gas costs
 
 | Action | Typical gas | Notes |
 |---|---|---|
 | `stake` | ~124k | First stake writes several new storage slots (most expensive case) |
-| `withdraw` | ~47k | Cheap: slots already exist |
+| `withdraw` | ~47k | Cheap: storage slots already exist |
 | `getReward` | ~144k | Includes the token transfer to the user |
 | `exit` | ~191k | Cheaper than `withdraw` + `getReward` as two transactions |
 | Deployment | ~875k | One-time cost |
 
 ### Coverage
 
-![forge coverage output](docs/images/coverage.png)
+| Lines | Statements | Branches | Functions |
+|---|---|---|---|
+| 87.9% (51/58) | 85.2% (52/61) | 64.3% (9/14) | 81.8% (9/11) |
 
-87.9% of lines are covered. The gaps are mostly error branches the tests don't hit yet:
-`RewardRateZero`, `RewardTooHigh`, the "extend an active period" branch of
-`notifyRewardAmount`, and the same-token branch. Closing these gaps is a good first exercise.
+The gaps are mostly error branches the tests don't hit yet: `RewardRateZero`, `RewardTooHigh`,
+the "extend an active period" branch of `notifyRewardAmount`, and the same-token branch.
+Closing these gaps is exercise 3.
 
 ## Security notes
 
@@ -291,7 +288,6 @@ test/StakingRewards.t.sol       12 unit + fuzz tests
 test/mocks/MockERC20.sol        mintable token for tests
 script/Deploy.s.sol             testnet deployment
 .github/workflows/test.yml      CI: build, test, gas report, coverage
-docs/images/                    screenshots of CI results
 ```
 
 ## Exercises
