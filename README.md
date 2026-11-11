@@ -1,311 +1,275 @@
 # Staking Rewards
 
-[![test](https://github.com/rajdama/staking-rewards/actions/workflows/test.yml/badge.svg)](https://github.com/rajdama/staking-rewards/actions/workflows/test.yml)
-![Solidity](https://img.shields.io/badge/Solidity-0.8.24-363636?logo=solidity)
-![Foundry](https://img.shields.io/badge/Built%20with-Foundry-FFDB1C)
-![Tests](https://img.shields.io/badge/tests-12%20passing-3fb950)
-![Coverage](https://img.shields.io/badge/line%20coverage-87.9%25-3fb950)
+[![contracts](https://github.com/rajdama/staking-rewards/actions/workflows/contracts.yml/badge.svg)](https://github.com/rajdama/staking-rewards/actions/workflows/contracts.yml)
+[![frontend](https://github.com/rajdama/staking-rewards/actions/workflows/frontend.yml/badge.svg)](https://github.com/rajdama/staking-rewards/actions/workflows/frontend.yml)
+[![indexer](https://github.com/rajdama/staking-rewards/actions/workflows/indexer.yml/badge.svg)](https://github.com/rajdama/staking-rewards/actions/workflows/indexer.yml)
+![Coverage](https://img.shields.io/badge/contract%20coverage-100%25-3fb950)
+![Slither](https://img.shields.io/badge/slither-0%20high%20%2F%200%20medium-3fb950)
 
-A smart contract where you **lock up tokens and earn reward tokens for as long as they stay locked**,
-like earning interest on a fixed deposit, but running entirely on the blockchain with no bank in between.
+A full-stack staking protocol: **lock up tokens, earn rewards every second, and lock for longer to earn
+up to 3x more.** Solidity contracts, a Next.js dApp, and a Go indexer with its own API and keeper bot.
+
+> **Live demo:** coming soon on the Sepolia testnet ([how it gets deployed](#deploying-it-yourself)).
+> Free test tokens, no real money.
 
 ## What is this, in simple words?
 
-Imagine a project wants to reward people who support it. It puts **1,000 reward tokens** into
-a pool and says: *"Over the next 7 days, these get shared among everyone who locks up (stakes)
-their tokens with us."*
+A project puts **1,000 reward tokens (RWD)** into a pool and says: *"Over the next 7 days, these get
+shared among everyone who locks up (stakes) their STK tokens with us."*
 
-- The rewards drip out **every second**, a fixed amount each time.
+- Rewards drip out **every second**, a fixed amount each time.
 - Each second's rewards are split among everyone staked, **based on how much they staked**.
-  Stake 25% of the pool and you get 25% of that second's rewards.
-- The **longer** you stay staked, the more you collect.
-- You can **claim** your rewards or **take your tokens back** whenever you want.
+- **Lock for longer, earn more:** choose no lock (1x), 30 days (1.5x), 90 days (2x) or a year (3x).
+  A 3x lock counts as three times the tokens when rewards are shared.
+- **Claim** rewards any time, and **withdraw** once your lock ends.
 
-A quick example: Alice stakes alone for the first half of the week, so she gets everything
-that drips out. Then Bob stakes the same amount, so for the second half they split it 50/50.
-At the end, Alice has earned 750 tokens and Bob 250. ([See the full breakdown](#worked-example).)
-
-This is how many real crypto projects reward their users, and this contract is based on the
-Synthetix design that a lot of DeFi protocols copied.
-
-### Key words
+Example: Alice stakes alone for the first half of the week, so she gets everything that drips out.
+Then Bob stakes the same amount and they split the second half 50/50. Alice ends with 750 RWD, Bob with
+250 ([full breakdown](#worked-example)). Had Bob locked for a year at 3x, he'd have taken 75% of the
+second half instead.
 
 | Term | Meaning |
 |---|---|
-| **Token** | A digital coin that lives on the blockchain (here, an ERC-20 token, the standard type on Ethereum) |
-| **Stake** | Lock your tokens inside the contract so they start earning |
-| **Reward period** | The time window (7 days here) over which the reward pool is shared out |
-| **Claim** | Collect the rewards you've earned into your wallet |
-| **Smart contract** | A program on the blockchain that holds the tokens and enforces the rules. Nobody, not even the owner, can take your staked tokens |
+| **Token** | A digital coin on the blockchain (here, standard ERC-20 tokens) |
+| **Stake** | Lock tokens in the contract so they start earning |
+| **Position** | One stake, with its own amount, lock and boost |
+| **Boost** | The multiplier from locking (1x to 3x) |
+| **Reward period** | The 7-day window the reward pool is shared over; renewed automatically every week |
+| **Smart contract** | The program that holds the tokens and enforces the rules. Nobody, not even the owner, can take staked tokens |
 
-## What this project teaches
+## Features
 
-This is **project 1** of a hands-on Web3 learning path. By building and reading it, you learn:
+**Smart contracts** ([`contracts/`](contracts))
+- Rewards streamed per second and shared by boosted balance, in O(1) gas regardless of staker count
+- Lock boosts per position, plus a public `kick()` that resets expired boosts so nobody keeps one unfairly
+- Rewards that accrue while nobody is staked are tracked and recoverable instead of locked forever
+- Test-token faucet so anyone can try the demo
+- 100% test coverage, fuzz and invariant tests, Slither in CI, and a [self-audit report](AUDIT.md)
 
-- **How rewards can be shared fairly among thousands of users cheaply.** Every blockchain
-  operation costs a fee (gas), so the contract can't loop through every user. It uses a
-  clever trick explained in [How the reward math works](#how-the-reward-math-works).
-- **How to write secure contracts.** Protection against common attacks such as reentrancy,
-  where a malicious contract tries to call back in and withdraw twice.
-- **How to test smart contracts properly** with [Foundry](https://getfoundry.sh/): normal tests,
-  fuzz tests (thousands of random inputs), gas reports and coverage.
+**dApp** ([`frontend/`](frontend))
+- Connect any wallet (RainbowKit), get free test tokens, stake with a lock of your choice
+- Rewards ticking up live, estimated APR per lock option, positions with unlock countdowns
+- Claim, withdraw or exit; clear transaction states with explorer links; works read-only without a wallet
 
-Built with Solidity 0.8.24, Foundry and OpenZeppelin v5 (a widely trusted library of
-audited contract building blocks).
-
----
-
-## Table of contents
-
-- [What is this, in simple words?](#what-is-this-in-simple-words)
-- [Architecture](#architecture)
-- [How the reward math works](#how-the-reward-math-works)
-- [Worked example](#worked-example)
-- [User flows](#user-flows)
-- [Contract API](#contract-api)
-- [Results](#results)
-- [Security notes](#security-notes)
-- [Getting started](#getting-started)
-- [Exercises](#exercises)
-
----
+**Indexer** ([`indexer/`](indexer))
+- Go service that follows the contract's events and stores them in Postgres
+- JSON API for stats, activity, leaderboard and staked-over-time history, used by the dApp
+- Optional keeper bot that kicks expired boosts automatically
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Owner(["👤 Owner"])
-    Users(["👥 Stakers"])
+    User(["👤 User"])
+    Owner(["👤 Owner<br/>GitHub Actions"])
 
-    subgraph Contract["StakingRewards.sol"]
-        direction TB
-        Acc["Global accounting<br/>rewardRate · rewardPerTokenStored<br/>updatedAt · finishAt · totalSupply"]
-        Per["Per-user accounting<br/>balanceOf · userRewardPerTokenPaid<br/>rewards"]
-        Mod{{"updateReward()<br/>modifier"}}
-        Mod --> Acc
-        Mod --> Per
+    subgraph Web["Frontend · Next.js on Vercel"]
+        UI["dApp<br/>wagmi · viem · RainbowKit"]
     end
 
-    STK[("STK<br/>staking token")]
-    RWD[("RWD<br/>reward token")]
+    subgraph Chain["Sepolia testnet"]
+        SR["StakingRewards"]
+        STK[("STK<br/>FaucetToken")]
+        RWD[("RWD<br/>FaucetToken")]
+        SR <-.-> STK
+        SR <-.-> RWD
+    end
 
-    Owner -- "notifyRewardAmount()<br/>deposit RWD, start period" --> Contract
-    Owner -- "setRewardsDuration()" --> Contract
-    Users -- "stake() / withdraw()" --> Contract
-    Users -- "getReward() / exit()" --> Contract
+    subgraph Backend["Indexer · Go"]
+        IX["Event follower"]
+        API["HTTP API"]
+        KP["Keeper bot"]
+        DB[("Postgres")]
+        IX --> DB
+        DB --> API
+        DB --> KP
+    end
 
-    STK <-.-> Contract
-    RWD <-.-> Contract
+    User --> UI
+    UI -- "stake, claim, withdraw" --> SR
+    UI -- "stats, activity, leaderboard" --> API
+    IX -- "reads events" --> SR
+    KP -- "kick expired boosts" --> SR
+    Owner -- "deploy, weekly reward top-up" --> SR
 ```
 
-Every state-changing function runs the `updateReward` modifier **first**. It settles the global
-reward counter up to the current second and credits the caller with what they earned so far,
-before their balance changes. That ordering is what keeps everyone's rewards correct.
+The contract is the source of truth: the dApp reads balances and rewards directly from the chain, and
+uses the indexer only for history (activity feed, leaderboard, chart). If the indexer is down, staking
+still works.
 
 ## How the reward math works
 
-Rewards stream out at a fixed `rewardRate` (tokens per second) and are split among all
-stakers by stake size. Paying everyone every second would require looping over all users,
-which costs unbounded gas. Instead, the contract keeps **one global number**:
+Paying every staker every second would mean looping over all of them, which costs unbounded gas. Instead,
+the contract keeps **one global number**:
 
-> **`rewardPerToken`** = total rewards earned by *one* staked token since the start
+> **`rewardPerToken`** = rewards earned by one unit of boosted balance since the start
 
-Whenever anything changes, it grows by:
-
-```
-rewardPerToken += rewardRate × secondsSinceLastUpdate × 1e18 / totalStaked
-```
-
-Each user stores the value of `rewardPerToken` from the last time their account was settled
-(`userRewardPerTokenPaid`). Their earnings are just the difference:
+On every stake, withdraw or claim, it grows by:
 
 ```
-earned = balance × (rewardPerToken − userRewardPerTokenPaid) / 1e18 + rewards (unclaimed)
+rewardPerToken += rewardRate × secondsSinceLastUpdate / totalEffective
 ```
 
-Every time a user calls `stake`, `withdraw` or `getReward`, the `updateReward` modifier
-runs these steps **before** anything else:
+Each user stores the value it had the last time their account was settled. Their earnings are the difference:
 
-1. **Update `rewardPerTokenStored`**: add the rewards for the time since `updatedAt`.
-2. **Set `updatedAt` to now** (capped at `finishAt`, so nothing accrues after the period ends).
-3. **Save the user's earned rewards** into `rewards[user]`, crediting them up to this second.
-4. **Set `userRewardPerTokenPaid[user]`** to the current `rewardPerTokenStored`.
-5. **Run the function itself**: change the balance, transfer tokens.
+```
+earned = effectiveBalance × (rewardPerToken − userRewardPerTokenPaid) + unclaimed rewards
+```
 
-Result: every operation is **O(1)**, whether there are 2 stakers or 2 million. The `1e18`
-scaling keeps precision so small values don't round down to zero.
+`effectiveBalance` is the stake times its boost. Every operation runs these steps first (the
+`updateReward` modifier), so balances never change in the middle of an interval:
+
+1. **Update `rewardPerTokenStored`** for the time since `updatedAt`. If nobody is staked, add that
+   time's rewards to `undistributedRewards` instead, so they can be recovered.
+2. **Set `updatedAt` to now**, capped at the end of the period.
+3. **Credit the user** with everything earned up to this second.
+4. **Run the function**: change balances, move tokens.
+
+Result: every operation costs the same gas whether there are 2 stakers or 2 million.
+
+### Lock boosts and kicks
+
+Each stake creates its own **position** with a lock and a multiplier, so a boost always matches the lock
+of the tokens it applies to. When a lock ends, the position can be withdrawn, and **anyone** can call
+`kick(user, positionId)` to drop its boost back to 1x. The indexer's keeper does this automatically.
 
 ## Worked example
 
 This is exactly what `test_LateStakerOnlyEarnsFromJoinTime` checks.
-Setup: **1,000 RWD** over **7 days** → `rewardRate ≈ 1.6534 RWD/second`.
+Setup: **1,000 RWD** over **7 days**, both users stake 100 STK with no lock.
 
-| Time | Event | Total staked | Δ rewardPerToken | rewardPerToken | Alice earned | Bob earned |
+| Time | Event | Total boosted | Δ rewardPerToken | rewardPerToken | Alice earned | Bob earned |
 |---|---|---|---|---|---|---|
 | Day 0 | Alice stakes 100 | 100 | — | 0 | 0 | — |
 | Day 3.5 | Bob stakes 100 | 200 | 500 RWD ÷ 100 = **5.0** | 5.0 | 100 × 5.0 = **500** | 0 (paid = 5.0) |
 | Day 7 | Period ends | 200 | 500 RWD ÷ 200 = **2.5** | 7.5 | 100 × 7.5 = **750** | 100 × (7.5 − 5.0) = **250** |
 
-Alice got the whole pool while she was alone, then half of it once Bob joined. Bob only earns
-from the moment he joined, because his `userRewardPerTokenPaid` was set to 5.0 when he staked.
+Bob only earns from the moment he joined, because his `userRewardPerTokenPaid` was set to 5.0 when he staked.
 
-## User flows
+## Repository structure
 
-**Owner starts a reward period**
+```
+contracts/                 Foundry project
+  src/StakingRewards.sol     the staking contract
+  src/FaucetToken.sol        testnet ERC-20 with a daily faucet
+  test/                      unit, fuzz, invariant and deploy-script tests
+  script/                    Deploy and Renew scripts
+  deployments/               deployed addresses per chain (written by the deploy workflow)
+frontend/                  Next.js dApp
+indexer/                   Go indexer, API and keeper
+.github/workflows/         CI for each part, plus deploy and weekly renew
+AUDIT.md                   self-audit report
+```
 
-1. Owner approves the contract to spend 1,000 RWD.
-2. Owner calls `notifyRewardAmount(1000)`. The contract pulls in the 1,000 RWD and sets
-   `rewardRate = 1000 / 7 days` and `finishAt = now + 7 days`.
+## Smart contracts
 
-**A user stakes, earns and leaves**
-
-1. User approves the contract to spend 100 STK.
-2. User calls `stake(100)`. Rewards are settled first (`updateReward`), then their balance
-   goes up by 100 and the tokens move into the contract.
-3. Time passes and rewards accrue automatically; no transaction is needed.
-4. User calls `getReward()`. Rewards are settled, their owed amount is reset to 0, and the
-   RWD is sent to their wallet.
-5. User calls `withdraw(100)` to get their STK back (or `exit()` to do steps 4 and 5 together).
-
-## Contract API
+### API
 
 | Function | Who | What it does |
 |---|---|---|
-| `stake(amount)` | anyone | Deposit staking tokens and start earning |
-| `withdraw(amount)` | staker | Take staking tokens back (rewards keep accruing on the rest) |
-| `getReward()` | staker | Claim all earned reward tokens |
-| `exit()` | staker | `withdraw` everything + `getReward` in one call |
-| `earned(account)` | view | Rewards owed to an account right now |
-| `rewardPerToken()` | view | Current accumulated reward per staked token (×1e18) |
-| `notifyRewardAmount(amount)` | owner | Deposit rewards and start a period, rolling over any leftover |
-| `setRewardsDuration(seconds)` | owner | Change period length (only after the current one ends) |
+| `stake(amount, lockId)` | anyone | Open a position. `lockId`: 0 = none (1x), 1 = 30 days (1.5x), 2 = 90 days (2x), 3 = 1 year (3x) |
+| `withdraw(positionId)` | staker | Withdraw an unlocked position in full |
+| `getReward()` | staker | Claim all earned rewards |
+| `exit()` | staker | Withdraw every unlocked position and claim, in one transaction |
+| `kick(user, positionId)` | anyone | Reset an expired lock's boost to 1x |
+| `earned(user)` · `getPositions(user)` | view | Rewards owed right now · all positions |
+| `notifyRewardAmount(amount)` | owner | Fund and start (or extend) a reward period |
+| `recoverUndistributed(to)` | owner | Send out rewards that accrued while nobody was staked |
+| `setRewardsDuration(seconds)` | owner | Change the period length between periods |
 
-## Results
+### Test results
 
-All results below come from the project's
-[GitHub Actions run](https://github.com/rajdama/staking-rewards/actions/workflows/test.yml)
-(Foundry 1.9.0, Solc 0.8.24, optimizer on, 200 runs). They're re-run automatically on every push.
+From the latest [CI run](https://github.com/rajdama/staking-rewards/actions/workflows/contracts.yml):
 
-### Build
+| Check | Result |
+|---|---|
+| Unit tests | 47 passing: every function, revert and branch |
+| Fuzz tests | 2 properties × 1,000 random runs |
+| Invariant tests | 4 properties × 25,600 random calls, 0 unexpected reverts |
+| Coverage | 100% lines, statements, branches and functions |
+| Slither | 0 high, 0 medium (only informational timestamp notes) |
+| End-to-end | Deploy and renew scripts run against a local Anvil chain |
 
-| Contract | Size | Share of 24 KB limit |
-|---|---|---|
-| `StakingRewards` | 3,468 bytes | ~14% |
+The invariants, checked after every random sequence of stakes, withdrawals, claims, kicks, top-ups and
+time jumps: staked tokens are always fully backed, boosted balances always add up, the contract can
+always pay everything it owes, and reward tokens are conserved (funded = claimed + recovered + held).
 
-### Tests: 12/12 passing
+### Gas
 
-| Test | What it checks | Result |
-|---|---|---|
-| `test_StakeUpdatesBalances` | Staking updates balances and moves tokens | ✅ |
-| `test_EarnsHalfRewardAtHalfTime` | A solo staker earns half the pool at the halfway point | ✅ |
-| `test_TwoStakersSplitProportionally` | 100 vs 300 staked splits rewards 25% / 75% | ✅ |
-| `test_LateStakerOnlyEarnsFromJoinTime` | The [worked example](#worked-example): 750 vs 250 | ✅ |
-| `test_NoRewardsAfterPeriodEnds` | Rewards stop growing after the period | ✅ |
-| `test_GetRewardTransfersTokens` | Claiming pays out exactly what was earned | ✅ |
-| `test_ExitReturnsStakeAndRewards` | `exit()` returns both stake and rewards | ✅ |
-| `test_RevertWhen_StakeZero` | Staking 0 is rejected | ✅ |
-| `test_RevertWhen_WithdrawMoreThanStaked` | Can't withdraw more than you staked | ✅ |
-| `test_RevertWhen_NonOwnerNotifies` | Only the owner can add rewards | ✅ |
-| `test_RevertWhen_ChangingDurationMidPeriod` | Duration can't change during a period | ✅ |
-| `testFuzz_NeverPaysMoreThanFunded` | 1,000 random runs: total owed never exceeds funded rewards | ✅ |
+| Action | Median gas |
+|---|---|
+| `stake` | ~215k (opens a new position) |
+| `withdraw` | ~106k |
+| `getReward` | ~122k |
+| `exit` | ~175k |
+| `kick` | ~127k |
 
-The fuzz test tries random stake amounts (from 1 wei up to 10¹² tokens) and random join
-times, and checks that the contract can never owe more than it holds.
+### Security
 
-### Gas costs
+See **[AUDIT.md](AUDIT.md)** for the full review: 2 medium and 3 low findings, all fixed or mitigated,
+and 5 informational notes. Key points: reentrancy guards on every entry point, checks-effects-interactions
+throughout, `SafeERC20` transfers, a solvency check on every reward top-up, and an owner who cannot touch
+staked funds. **This is a testnet learning project and has not had a third-party audit.**
 
-| Action | Typical gas | Notes |
-|---|---|---|
-| `stake` | ~124k | First stake writes several new storage slots (most expensive case) |
-| `withdraw` | ~47k | Cheap: storage slots already exist |
-| `getReward` | ~144k | Includes the token transfer to the user |
-| `exit` | ~191k | Cheaper than `withdraw` + `getReward` as two transactions |
-| Deployment | ~875k | One-time cost |
-
-### Coverage
-
-| Lines | Statements | Branches | Functions |
-|---|---|---|---|
-| 87.9% (51/58) | 85.2% (52/61) | 64.3% (9/14) | 81.8% (9/11) |
-
-The gaps are mostly error branches the tests don't hit yet: `RewardRateZero`, `RewardTooHigh`,
-the "extend an active period" branch of `notifyRewardAmount`, and the same-token branch.
-Closing these gaps is exercise 3.
-
-## Security notes
-
-- **Reentrancy:** all user functions are `nonReentrant`, and state is updated before token
-  transfers (checks-effects-interactions).
-- **Safe transfers:** uses OpenZeppelin `SafeERC20`, so tokens that don't return `bool` still work.
-- **Solvency check:** `notifyRewardAmount` reverts if the contract can't pay the full period.
-  When the staking and reward token are the same, staked funds are excluded from that check.
-- **`block.timestamp` lint warning:** validators can shift timestamps by a few seconds. For a
-  reward period measured in days, that changes payouts by a negligible amount, so it's accepted
-  here (the same trade-off Synthetix makes).
-- **Known limitation:** if nobody is staked for part of a period, those rewards are never
-  distributed and stay locked in the contract (see exercise 2).
-- **Not audited.** This is a learning project. Don't use it with real funds.
-
-## Getting started
+## Frontend
 
 ```bash
-# 1. Install Foundry (once)
-curl -L https://foundry.paradigm.xyz | bash
-foundryup
-
-# 2. Clone and install dependencies
-git clone https://github.com/rajdama/staking-rewards
-cd staking-rewards
-forge install foundry-rs/forge-std OpenZeppelin/openzeppelin-contracts@v5.1.0
-
-# 3. Build and test
-forge build
-forge test -vv
+cd frontend
+cp .env.example .env.local    # set NEXT_PUBLIC_STAKING_ADDRESS and friends
+npm install
+npm run dev                   # http://localhost:3000
 ```
 
-More commands:
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_STAKING_ADDRESS` | Deployed `StakingRewards` address (from `contracts/deployments/11155111.json`) |
+| `NEXT_PUBLIC_CHAIN_ID` | `11155111` for Sepolia, `31337` for a local Anvil chain |
+| `NEXT_PUBLIC_RPC_URL` | Optional RPC URL; falls back to a public one |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Free ID from WalletConnect, needed for mobile wallets |
+| `NEXT_PUBLIC_INDEXER_URL` | Optional indexer API URL; enables activity, leaderboard and chart |
+
+## Indexer
 
 ```bash
-forge test --match-test testFuzz -vvv   # only the fuzz test
-forge test --gas-report                 # gas per function
-forge coverage --report summary         # line/branch coverage
+cd indexer
+cp .env.example .env          # RPC_URL, DATABASE_URL, STAKING_ADDRESS, START_BLOCK
+go run ./cmd/indexer
 ```
 
-### Deploy to Sepolia
+It reads logs in confirmed batches (default 3 confirmations), stores them idempotently in one
+transaction per batch with a block cursor, so restarts and crashes are safe.
 
-```bash
-cast wallet import dev --interactive    # store a testnet key, encrypted (once)
-forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC_URL --account dev --broadcast
-```
+| Endpoint | Returns |
+|---|---|
+| `GET /api/stats` | Total staked and boosted, stakers, open positions, total claimed, last indexed block |
+| `GET /api/activity?limit=20` | Latest stakes, withdrawals, claims and kicks |
+| `GET /api/users/{address}/activity` | One user's history |
+| `GET /api/leaderboard?limit=10` | Stakers ranked by boosted balance, with rewards claimed |
+| `GET /api/history?days=30` | Total staked at the end of each day |
+| `GET /healthz` | Health check |
 
-Get Sepolia ETH from a faucet first, and never use a key that holds real funds.
+Set `KEEPER_PRIVATE_KEY` (a separate wallet with a little Sepolia ETH) to enable the keeper, which kicks
+expired boosts every 10 minutes. A `Dockerfile` is included for deployment.
 
-### Project structure
+## Deploying it yourself
 
-```
-src/StakingRewards.sol          the contract
-test/StakingRewards.t.sol       12 unit + fuzz tests
-test/mocks/MockERC20.sol        mintable token for tests
-script/Deploy.s.sol             testnet deployment
-.github/workflows/test.yml      CI: build, test, gas report, coverage
-```
+1. **Wallet:** create a fresh wallet for deployment only, and get Sepolia ETH from a faucet.
+2. **Accounts:** get a Sepolia RPC URL (for example Alchemy) and an Etherscan API key.
+3. **Secrets:** in the repo's *Settings → Secrets and variables → Actions*, add `DEPLOYER_PRIVATE_KEY`,
+   `SEPOLIA_RPC_URL` and `ETHERSCAN_API_KEY`.
+4. **Deploy:** run the **deploy** workflow from the *Actions* tab. It deploys and verifies the contracts,
+   starts the first reward period, and commits the addresses to `contracts/deployments/11155111.json`.
+   The **renew rewards** workflow then tops up the pool every Monday.
+5. **Frontend:** import the repo on Vercel with root directory `frontend` and the environment variables above.
+6. **Indexer:** deploy `indexer/` on a host such as Railway with a Postgres database, using the
+   `startBlock` from the deployment file as `START_BLOCK`. Then set `NEXT_PUBLIC_INDEXER_URL` on Vercel.
 
-## Exercises
+## Tech stack
 
-1. **Trace the math.** Before changing anything, work through
-   `test_LateStakerOnlyEarnsFromJoinTime` by hand using the [worked example](#worked-example).
-2. **Find the stuck-rewards bug.** Write a test proving that rewards for time when nobody is
-   staked get locked forever. Then add an owner function to recover them, without touching
-   staked funds or rewards already owed.
-3. **Get branch coverage to 100%.** Add tests for every uncovered error path listed in
-   [Coverage](#coverage).
-4. **Write an invariant test.** Build a handler contract that randomly stakes, withdraws and
-   claims for several users. Invariant: the contract's reward balance is always ≥ total owed.
-5. **Add a lock period.** Users can't withdraw for 3 days after staking. What should happen
-   when someone stakes again during their lock?
-6. **Try an attack.** Write a fee-on-transfer token mock and see which accounting breaks.
-7. **Ship it.** Deploy to Sepolia, verify on Etherscan, and add the addresses here.
+Solidity 0.8.24 · Foundry · OpenZeppelin v5 · Slither · Next.js 14 · TypeScript · wagmi · viem ·
+RainbowKit · TanStack Query · Go 1.22 · go-ethereum · pgx · Postgres · GitHub Actions
 
 ---
 
-*Design based on the Synthetix `StakingRewards` pattern.*
+*Reward math based on the Synthetix `StakingRewards` design, extended with lock boosts, kicks and
+undistributed-reward recovery.*
