@@ -106,12 +106,12 @@ contract StakingRewards is Ownable, ReentrancyGuard {
 
     mapping(address => Position[]) internal _positions;
 
-    constructor(address _stakingToken, address _rewardsToken, uint256 _duration) Ownable(msg.sender) {
-        if (_stakingToken == address(0) || _rewardsToken == address(0)) revert ZeroAddress();
-        if (_duration == 0) revert ZeroDuration();
-        stakingToken = IERC20(_stakingToken);
-        rewardsToken = IERC20(_rewardsToken);
-        duration = _duration;
+    constructor(address stakingToken_, address rewardsToken_, uint256 duration_) Ownable(msg.sender) {
+        if (stakingToken_ == address(0) || rewardsToken_ == address(0)) revert ZeroAddress();
+        if (duration_ == 0) revert ZeroDuration();
+        stakingToken = IERC20(stakingToken_);
+        rewardsToken = IERC20(rewardsToken_);
+        duration = duration_;
     }
 
     // ------------------------------------------------------------------
@@ -167,8 +167,9 @@ contract StakingRewards is Ownable, ReentrancyGuard {
     }
 
     function earned(address account) public view returns (uint256) {
-        return (effectiveBalanceOf[account] * (rewardPerToken() - userRewardPerTokenPaid[account])) / 1e18
-            + rewards[account];
+        return
+            (effectiveBalanceOf[account] * (rewardPerToken() - userRewardPerTokenPaid[account])) / 1e18
+                + rewards[account];
     }
 
     function positionCount(address user) external view returns (uint256) {
@@ -230,10 +231,28 @@ contract StakingRewards is Ownable, ReentrancyGuard {
     function exit() external nonReentrant updateReward(msg.sender) {
         Position[] storage positions = _positions[msg.sender];
         uint256 count = positions.length;
+        uint256 totalAmount;
+        uint256 totalEffectiveOut;
+
         for (uint256 i = 0; i < count; ++i) {
-            if (positions[i].amount != 0 && block.timestamp >= positions[i].unlockTime) {
-                _withdraw(i);
-            }
+            Position storage p = positions[i];
+            if (p.amount == 0 || block.timestamp < p.unlockTime) continue;
+
+            uint256 amount = p.amount;
+            totalAmount += amount;
+            totalEffectiveOut += _effective(amount, p.multiplierBps);
+            p.amount = 0;
+            p.multiplierBps = 0;
+            emit Withdrawn(msg.sender, i, amount);
+        }
+
+        // One write per total instead of one per position.
+        if (totalAmount > 0) {
+            totalStaked -= totalAmount;
+            totalEffective -= totalEffectiveOut;
+            stakedOf[msg.sender] -= totalAmount;
+            effectiveBalanceOf[msg.sender] -= totalEffectiveOut;
+            stakingToken.safeTransfer(msg.sender, totalAmount);
         }
         _claim();
     }
@@ -256,11 +275,11 @@ contract StakingRewards is Ownable, ReentrancyGuard {
     // Owner actions
     // ------------------------------------------------------------------
 
-    function setRewardsDuration(uint256 _duration) external onlyOwner {
+    function setRewardsDuration(uint256 newDuration) external onlyOwner {
         if (block.timestamp < finishAt) revert RewardPeriodActive();
-        if (_duration == 0) revert ZeroDuration();
-        duration = _duration;
-        emit RewardsDurationUpdated(_duration);
+        if (newDuration == 0) revert ZeroDuration();
+        duration = newDuration;
+        emit RewardsDurationUpdated(newDuration);
     }
 
     /// @notice Pull `amount` reward tokens from the owner and start (or extend) a reward period.
@@ -268,21 +287,22 @@ contract StakingRewards is Ownable, ReentrancyGuard {
     function notifyRewardAmount(uint256 amount) external onlyOwner updateReward(address(0)) {
         rewardsToken.safeTransferFrom(msg.sender, address(this), amount);
 
-        if (block.timestamp >= finishAt) {
-            rewardRate = amount / duration;
-        } else {
-            uint256 remaining = (finishAt - block.timestamp) * rewardRate;
-            rewardRate = (amount + remaining) / duration;
+        // Everything the new period will pay out: the new amount plus what's left of the current period.
+        uint256 total = amount;
+        if (block.timestamp < finishAt) {
+            total += (finishAt - block.timestamp) * rewardRate;
         }
-        if (rewardRate == 0) revert RewardRateZero();
+        if (total < duration) revert RewardRateZero(); // would round the rate down to 0
 
-        // The contract must hold enough to pay the whole period. Staked funds (when both
-        // tokens are the same) and recoverable undistributed rewards don't count.
+        // The contract must hold the full total. Staked funds (when both tokens are the same)
+        // and recoverable undistributed rewards don't count.
         uint256 available = rewardsToken.balanceOf(address(this)) - undistributedRewards;
         if (address(rewardsToken) == address(stakingToken)) {
             available -= totalStaked;
         }
-        if (rewardRate * duration > available) revert RewardTooHigh();
+        if (total > available) revert RewardTooHigh();
+
+        rewardRate = total / duration;
 
         finishAt = block.timestamp + duration;
         updatedAt = block.timestamp;

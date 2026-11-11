@@ -279,6 +279,19 @@ contract StakingRewardsTest is Test {
         assertEq(staking.stakedOf(alice), 50e18);
     }
 
+    function test_ExitWithOnlyLockedPositionsJustClaims() public {
+        _stake(alice, 100e18, 2);
+        vm.warp(block.timestamp + DURATION);
+        uint256 expectedReward = staking.earned(alice);
+
+        vm.prank(alice);
+        staking.exit();
+
+        assertEq(stakeToken.balanceOf(alice), 0);
+        assertEq(rewardToken.balanceOf(alice), expectedReward);
+        assertEq(staking.stakedOf(alice), 100e18);
+    }
+
     // ------------------------------------------------------------------
     // Kick
     // ------------------------------------------------------------------
