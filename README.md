@@ -84,12 +84,12 @@ earned = balance × (rewardPerToken − userRewardPerTokenPaid) / 1e18 + rewards
 
 ```mermaid
 flowchart TD
-    A["User calls stake / withdraw / getReward"] --> B["updateReward(user)"]
-    B --> C["rewardPerTokenStored = rewardPerToken()<br/><i>add rewards for time since updatedAt</i>"]
-    C --> D["updatedAt = min(now, finishAt)"]
-    D --> E["rewards[user] = earned(user)<br/><i>credit user up to this second</i>"]
-    E --> F["userRewardPerTokenPaid[user] = rewardPerTokenStored"]
-    F --> G["Run function body<br/><i>change balance / transfer tokens</i>"]
+    A["User calls stake, withdraw or getReward"] --> B["updateReward modifier runs first"]
+    B --> C["1. Update rewardPerTokenStored<br/>add rewards for time since updatedAt"]
+    C --> D["2. Set updatedAt to now<br/>capped at finishAt"]
+    D --> E["3. Save user's earned rewards<br/>credit them up to this second"]
+    E --> F["4. Set userRewardPerTokenPaid<br/>to the current rewardPerTokenStored"]
+    F --> G["5. Run the function body<br/>change balance, transfer tokens"]
 ```
 
 Result: every operation is **O(1)**, whether there are 2 stakers or 2 million. The `1e18`
@@ -109,16 +109,7 @@ Setup: **1,000 RWD** over **7 days** → `rewardRate ≈ 1.6534 RWD/second`.
 Alice got the whole pool while she was alone, then half of it once Bob joined. Bob only earns
 from the moment he joined, because his `userRewardPerTokenPaid` was set to 5.0 when he staked.
 
-```mermaid
-xychart-beta
-    title "Cumulative rewards earned (RWD)"
-    x-axis "Day" [0, 1, 2, 3, 3.5, 4, 5, 6, 7]
-    y-axis "RWD" 0 --> 800
-    line [0, 143, 286, 429, 500, 536, 607, 679, 750]
-    line [0, 0, 0, 0, 0, 36, 107, 179, 250]
-```
-
-*Top line: Alice. Bottom line: Bob. Alice's slope halves on day 3.5 when Bob joins.*
+![Cumulative rewards for Alice and Bob over 7 days](docs/images/rewards-chart.png)
 
 ## User flows
 
@@ -133,22 +124,22 @@ sequenceDiagram
 
     O->>RWD: approve(S, 1000)
     O->>S: notifyRewardAmount(1000)
-    S->>RWD: transferFrom(owner → S, 1000)
+    S->>RWD: transferFrom(owner to S, 1000)
     Note over S: rewardRate = 1000 / 7 days<br/>finishAt = now + 7 days
 
     U->>STK: approve(S, 100)
     U->>S: stake(100)
     Note over S: updateReward(U), then balance += 100
-    S->>STK: transferFrom(U → S, 100)
+    S->>STK: transferFrom(U to S, 100)
 
-    Note over U,S: ⏳ time passes, rewards accrue
+    Note over U,S: Time passes, rewards accrue
 
     U->>S: getReward()
     Note over S: updateReward(U), then rewards[U] = 0
-    S->>RWD: transfer(S → U, earned)
+    S->>RWD: transfer(S to U, earned)
 
     U->>S: withdraw(100)
-    S->>STK: transfer(S → U, 100)
+    S->>STK: transfer(S to U, 100)
 ```
 
 ## Contract API
