@@ -88,6 +88,7 @@ jobs:
           tail -50 /tmp/next.log || true
 
       - name: Publish to the screenshots branch
+        if: always()
         run: |
           cd "$RUNNER_TEMP/shots"
           git init -q -b screenshots

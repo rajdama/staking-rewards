@@ -71,7 +71,19 @@ async function newPage(browser, viewport) {
 
 async function connect(page) {
   await page.getByRole("button", { name: "Connect Wallet" }).first().click();
-  await page.getByText("MetaMask", { exact: true }).first().click();
+  const dialog = page.getByRole("dialog");
+  await dialog.waitFor();
+  // The wallet list re-renders while it animates in, so retry the click until we're connected.
+  for (let attempt = 1; attempt <= 8; attempt++) {
+    await page.waitForTimeout(1000);
+    if (await page.getByText("Your positions").isVisible()) break;
+    const wallet = dialog.getByRole("button", { name: /MetaMask/ }).first();
+    try {
+      await wallet.click({ force: true, timeout: 3000 });
+    } catch (e) {
+      console.log(`connect attempt ${attempt}: ${e.message.split("\n")[0]}`);
+    }
+  }
   await page.getByText("Your positions").waitFor();
   await page.locator("table.table tbody tr").first().waitFor();
   await page.waitForTimeout(2500); // let reads and the indexer panels settle
@@ -85,6 +97,7 @@ async function waitForTx(page) {
 }
 
 const browser = await chromium.launch();
+let current;
 try {
   // 1. Landing page, wallet not connected.
   const visitor = await newPage(browser, { width: 1280, height: 900 });
@@ -96,6 +109,7 @@ try {
 
   // 2. Connected dashboard.
   const page = await newPage(browser, { width: 1280, height: 900 });
+  current = page;
   await page.goto(APP);
   await connect(page);
   await page.screenshot({ path: `${OUT}/02-dashboard.png`, fullPage: true });
@@ -126,12 +140,20 @@ try {
 
   // 7. Mobile.
   const mobile = await newPage(browser, { width: 390, height: 844 });
+  current = mobile;
   await mobile.goto(APP);
   await connect(mobile);
   await mobile.screenshot({ path: `${OUT}/07-mobile.png`, fullPage: true });
   await mobile.context().close();
 
   console.log("Screenshots saved to", OUT);
+} catch (e) {
+  if (current) {
+    await current.screenshot({ path: `${OUT}/debug-failure.png` }).catch(() => {});
+    const dialog = await current.getByRole("dialog").innerText().catch(() => "(no dialog)");
+    console.log("Dialog text on failure:\n", dialog);
+  }
+  throw e;
 } finally {
   await browser.close();
 }
