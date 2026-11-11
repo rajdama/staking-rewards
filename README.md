@@ -12,6 +12,11 @@ up to 3x more.** Solidity contracts, a Next.js dApp, and a Go indexer with its o
 > **Live demo:** coming soon on the Sepolia testnet ([how it gets deployed](#deploying-it-yourself)).
 > Free test tokens, no real money.
 
+![Staking Rewards dashboard right after staking 750 STK with a 90-day 2x lock](docs/images/dashboard.png)
+
+*The dApp right after staking 750 STK with a 90-day lock: live-ticking rewards, estimated APR for each
+lock option, and the transaction confirmation. Captured from the full stack running on a local chain.*
+
 ## What is this, in simple words?
 
 A project puts **1,000 reward tokens (RWD)** into a pool and says: *"Over the next 7 days, these get
