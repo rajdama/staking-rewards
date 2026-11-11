@@ -6,17 +6,58 @@
 ![Tests](https://img.shields.io/badge/tests-12%20passing-3fb950)
 ![Coverage](https://img.shields.io/badge/line%20coverage-87.9%25-3fb950)
 
-Stake an ERC-20 token and earn reward tokens over time, shared in proportion to your stake.
-Built with [Foundry](https://getfoundry.sh/) and OpenZeppelin v5.
+A smart contract where you **lock up tokens and earn reward tokens for as long as they stay locked**,
+like earning interest on a fixed deposit, but running entirely on the blockchain with no bank in between.
 
-This is **project 1** of a hands-on Web3 learning path. It covers reward-accounting math,
-the checks-effects-interactions pattern, reentrancy protection, and testing with Foundry
-(unit tests, fuzz tests, gas reports and coverage).
+## What is this, in simple words?
+
+Imagine a project wants to reward people who support it. It puts **1,000 reward tokens** into
+a pool and says: *"Over the next 7 days, these get shared among everyone who locks up (stakes)
+their tokens with us."*
+
+- The rewards drip out **every second**, a fixed amount each time.
+- Each second's rewards are split among everyone staked, **based on how much they staked**.
+  Stake 25% of the pool and you get 25% of that second's rewards.
+- The **longer** you stay staked, the more you collect.
+- You can **claim** your rewards or **take your tokens back** whenever you want.
+
+A quick example: Alice stakes alone for the first half of the week, so she gets everything
+that drips out. Then Bob stakes the same amount, so for the second half they split it 50/50.
+At the end, Alice has earned 750 tokens and Bob 250. ([See the full breakdown](#worked-example).)
+
+This is how many real crypto projects reward their users, and this contract is based on the
+Synthetix design that a lot of DeFi protocols copied.
+
+### Key words
+
+| Term | Meaning |
+|---|---|
+| **Token** | A digital coin that lives on the blockchain (here, an ERC-20 token, the standard type on Ethereum) |
+| **Stake** | Lock your tokens inside the contract so they start earning |
+| **Reward period** | The time window (7 days here) over which the reward pool is shared out |
+| **Claim** | Collect the rewards you've earned into your wallet |
+| **Smart contract** | A program on the blockchain that holds the tokens and enforces the rules. Nobody, not even the owner, can take your staked tokens |
+
+## What this project teaches
+
+This is **project 1** of a hands-on Web3 learning path. By building and reading it, you learn:
+
+- **How rewards can be shared fairly among thousands of users cheaply.** Every blockchain
+  operation costs a fee (gas), so the contract can't loop through every user. It uses a
+  clever trick explained in [How the reward math works](#how-the-reward-math-works).
+- **How to write secure contracts.** Protection against common attacks such as reentrancy,
+  where a malicious contract tries to call back in and withdraw twice.
+- **How to test smart contracts properly** with [Foundry](https://getfoundry.sh/): normal tests,
+  fuzz tests (thousands of random inputs), gas reports and coverage.
+
+Built with Solidity 0.8.24, Foundry and OpenZeppelin v5 (a widely trusted library of
+audited contract building blocks).
 
 ---
 
 ## Table of contents
 
+- [What is this, in simple words?](#what-is-this-in-simple-words)
 - [Architecture](#architecture)
 - [How the reward math works](#how-the-reward-math-works)
 - [Worked example](#worked-example)
